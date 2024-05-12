@@ -254,7 +254,7 @@ class AachenDataset(Dataset):
             img_id = name1
             quat = None
 
-        return (image_name, img_id, quat)
+        return image_name, img_id, quat
 
     def __getitem__(self, idx):
         if type(idx) == list:
@@ -283,14 +283,9 @@ class RobotCarDataset(Dataset):
 
         if self.train:
             (
-                self.xyz_arr,
-                self.image2points,
                 self.image2name,
                 self.image2pose,
-                self.image2info,
-                self.image2uvs,
-                self.rgb_arr,
-            ) = utils.read_nvm_file(self.sfm_model_dir)
+            ) = benchmark_utils.read_nvm_file(self.sfm_model_dir)
             self.name2image = {v: k for k, v in self.image2name.items()}
             self.img_ids = list(self.image2name.keys())
 
@@ -319,67 +314,20 @@ class RobotCarDataset(Dataset):
         name2 = str(self.images_dir / name).replace(".png", ".jpg")
         return name2
 
-    def _load_image(self, img_id):
-        name2 = self._process_id_to_name(img_id)
-        image = io.imread(name2)
-
-        if len(image.shape) < 3:
-            # Convert to RGB if needed.
-            image = color.gray2rgb(image)
-
-        return image, name2
-
     def __len__(self):
         return len(self.img_ids)
 
     def _get_single_item(self, idx):
         if self.train:
             img_id = self.img_ids[idx]
-            image, image_name = self._load_image(img_id)
+            image_name = self._process_id_to_name(img_id)
             quat = None
             if type(self.image2pose[img_id]) == list:
                 qw, qx, qy, qz, tx, ty, tz = self.image2pose[img_id]
                 quat = qw, qx, qy, qz, tx, ty, tz
-                pose_mat = utils.return_pose_mat_no_inv([qw, qx, qy, qz], [tx, ty, tz])
             else:
                 pose_mat = self.image2pose[img_id]
                 # pose_mat = np.linalg.inv(pose_mat)
-
-            intrinsics = torch.eye(3)
-            if img_id in self.image2info:
-                focal, radial = self.image2info[img_id]
-                cx, cy = 512, 512
-            else:
-                focal = 400
-                if "rear" in image_name:
-                    cx = 508.222931
-                    cy = 498.187378
-                elif "right" in image_name:
-                    cx = 502.503754
-                    cy = 490.259033
-                elif "left" in image_name:
-                    cx = 500.107605
-                    cy = 511.461426
-
-            assert image.shape == (1024, 1024, 3)
-            intrinsics[0, 0] = focal
-            intrinsics[1, 1] = focal
-            intrinsics[0, 2] = cx
-            intrinsics[1, 2] = cy
-
-            pid_list = self.image2points[img_id]
-            xyz_gt = self.xyz_arr[pid_list]
-
-            uv_gt = np.array(self.image2uvs[img_id])
-            camera = pycolmap.Camera(
-                model="SIMPLE_RADIAL",
-                width=1024,
-                height=1024,
-                params=[focal, cx, cy, 0],
-            )
-
-            pose_inv = torch.from_numpy(pose_mat)
-
         else:
             name0 = self.img_ids[idx]
 
@@ -394,52 +342,13 @@ class RobotCarDataset(Dataset):
 
             image_name = str(self.images_dir / name1)
 
-            focal = 400
-            if "rear" in name1:
-                cx = 508.222931
-                cy = 498.187378
-            elif "right" in name1:
-                cx = 502.503754
-                cy = 490.259033
-            elif "left" in name1:
-                cx = 500.107605
-                cy = 511.461426
-
-            camera = pycolmap.Camera(
-                model="SIMPLE_RADIAL",
-                width=1024,
-                height=1024,
-                params=[focal, cx, cy, 0],
-            )
-
-            intrinsics = torch.eye(3)
-
-            intrinsics[0, 0] = focal
-            intrinsics[1, 1] = focal
-            intrinsics[0, 2] = cx
-            intrinsics[1, 2] = cy
-            image = None
             img_id = name1
-            pid_list = []
-            if type(self.name2mat[name0]) == np.ndarray:
-                pose_inv = torch.from_numpy(self.name2mat[name0])
-            else:
-                pose_inv = None
-            xyz_gt = None
-            uv_gt = None
             quat = None
 
         return (
-            image,
             image_name,
             img_id,
-            pid_list,
             quat,
-            pose_inv,
-            intrinsics,
-            camera,
-            xyz_gt,
-            uv_gt,
         )
 
     def __getitem__(self, idx):

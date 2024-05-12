@@ -25,7 +25,11 @@ def run_function(
         encoder_global,
         conf_ns_retrieval,
     )
-    trainer_.evaluate()
+    res_name = (
+        f"output/{trainer_.ds_name}/Aachen_v1_1_eval_{trainer_.global_desc_model_name}_{trainer_.global_feature_dim}.txt",
+    )
+
+    trainer_.evaluate(res_name)
 
 
 if __name__ == "__main__":
