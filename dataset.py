@@ -13,7 +13,7 @@ from torch.utils.data.dataloader import default_collate
 from tqdm import tqdm
 
 import colmap_read
-import utils
+import benchmark_utils
 
 _logger = logging.getLogger(__name__)
 
@@ -223,55 +223,9 @@ class AachenDataset(Dataset):
             self.recon_images = colmap_read.read_images_binary(
                 f"{self.sfm_model_dir}/images.bin"
             )
-            self.recon_cameras = colmap_read.read_cameras_binary(
-                f"{self.sfm_model_dir}/cameras.bin"
-            )
-            self.recon_points = colmap_read.read_points3D_binary(
-                f"{self.sfm_model_dir}/points3D.bin"
-            )
             self.image_name2id = {}
             for image_id, image in self.recon_images.items():
                 self.image_name2id[image.name] = image_id
-            self.image_id2points = {}
-            self.pid2images = {}
-
-            index_map_file_name = f"output/{self.ds_type}/indices.npy"
-            Path(f"output/{self.ds_type}").mkdir(parents=True, exist_ok=True)
-
-            xyz_arr = np.zeros((len(self.recon_points), 3))
-            all_pids = np.zeros(len(self.recon_points), dtype=int)
-            for idx, pid in enumerate(list(self.recon_points.keys())):
-                xyz_arr[idx] = self.recon_points[pid].xyz
-                all_pids[idx] = pid
-
-            if os.path.isfile(index_map_file_name):
-                inlier_ind = np.load(index_map_file_name)
-            else:
-                import open3d as o3d
-
-                point_cloud = o3d.geometry.PointCloud(
-                    o3d.utility.Vector3dVector(xyz_arr)
-                )
-                cl, inlier_ind = point_cloud.remove_radius_outlier(
-                    nb_points=16, radius=5, print_progress=True
-                )
-
-                np.save(index_map_file_name, np.array(inlier_ind))
-
-                # vis = o3d.visualization.Visualizer()
-                # vis.create_window(width=1920, height=1025)
-                # vis.add_geometry(cl)
-                # vis.run()
-                # vis.destroy_window()
-
-            self.good_pids = set(all_pids[inlier_ind])
-            self.image_id2pids = {}
-            self.image_id2uvs = {}
-            for img_id in tqdm(self.recon_images, desc="Gathering points per image"):
-                pid_arr = self.recon_images[img_id].point3D_ids
-                mask = [True if pid in self.good_pids else False for pid in pid_arr]
-                self.image_id2pids[img_id] = pid_arr[mask]
-                self.image_id2uvs[img_id] = self.recon_images[img_id].xys[mask]
             self.img_ids = list(self.image_name2id.values())
         else:
             name2params1 = read_intrinsic(self.day_intrinsic_file)
@@ -280,80 +234,27 @@ class AachenDataset(Dataset):
             self.img_ids = list(self.name2params.keys())
         return
 
-    def _load_image(self, img_id):
-        name = self.recon_images[img_id].name
-        name2 = str(self.images_dir / name)
-        image = io.imread(name2)
-
-        if len(image.shape) < 3:
-            # Convert to RGB if needed.
-            image = color.gray2rgb(image)
-
-        return image, name2
-
     def __len__(self):
         return len(self.img_ids)
 
     def _get_single_item(self, idx):
         if self.train:
             img_id = self.img_ids[idx]
-
-            image, image_name = self._load_image(img_id)
-            camera_id = self.recon_images[img_id].camera_id
-            camera = self.recon_cameras[camera_id]
-            focal, cx, cy, k = camera.params
-            intrinsics = torch.eye(3)
-
-            intrinsics[0, 0] = focal
-            intrinsics[1, 1] = focal
-            intrinsics[0, 2] = cx
-            intrinsics[1, 2] = cy
+            name = self.recon_images[img_id].name
+            image_name = str(self.images_dir / name)
             qvec = self.recon_images[img_id].qvec
             tvec = self.recon_images[img_id].tvec
-            pose_inv = utils.return_pose_mat_no_inv(qvec, tvec)
-
-            pid_list = self.image_id2pids[img_id]
-            uv_gt = self.image_id2uvs[img_id] + 0.5
-            xyz_gt = None
-
-            pose_inv = torch.from_numpy(pose_inv)
+            # pose_inv = benchmark_utils.return_pose_mat_no_inv(qvec, tvec)
+            quat = np.concatenate([qvec, tvec])
 
         else:
             name1 = self.img_ids[idx]
             image_name = str(self.images_dir / name1)
 
-            cam_type, width, height, focal, cx, cy, k = self.name2params[name1]
-            camera = pycolmap.Camera(
-                model=cam_type,
-                width=int(width),
-                height=int(height),
-                params=[focal, cx, cy, k],
-            )
-
-            intrinsics = torch.eye(3)
-
-            intrinsics[0, 0] = focal
-            intrinsics[1, 1] = focal
-            intrinsics[0, 2] = cx
-            intrinsics[1, 2] = cy
-            image = None
             img_id = name1
-            pid_list = []
-            pose_inv = None
-            xyz_gt = None
-            uv_gt = None
+            quat = None
 
-        return (
-            image,
-            image_name,
-            img_id,
-            pid_list,
-            pose_inv,
-            intrinsics,
-            camera,
-            xyz_gt,
-            uv_gt,
-        )
+        return (image_name, img_id, quat)
 
     def __getitem__(self, idx):
         if type(idx) == list:
@@ -394,26 +295,6 @@ class RobotCarDataset(Dataset):
             self.img_ids = list(self.image2name.keys())
 
             self.name2mat = read_train_poses(self.test_file1)
-
-            # start_id = max(self.img_ids)+1
-            # self.name2id = {}
-            # for name in self.name2mat:
-            #     pose = self.name2mat[name]
-            #     self.name2id[name] = start_id
-            #     self.image2name[start_id] = f"./{name}"
-            #     self.image2pose[start_id] = pose
-            #     self.img_ids.append(start_id)
-            #     start_id += 1
-            # self.complete_image2points()
-
-            # self.img_ids = self.img_ids[-len(self.name2mat):]
-            # import open3d as o3d
-            # point_cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(self.xyz_arr))
-            # vis = o3d.visualization.Visualizer()
-            # vis.create_window(width=1920, height=1025)
-            # vis.add_geometry(point_cloud)
-            # vis.run()
-            # vis.destroy_window()
         else:
             self.ts2cond = {}
             for condition in CONDITIONS:
@@ -455,11 +336,11 @@ class RobotCarDataset(Dataset):
         if self.train:
             img_id = self.img_ids[idx]
             image, image_name = self._load_image(img_id)
+            quat = None
             if type(self.image2pose[img_id]) == list:
                 qw, qx, qy, qz, tx, ty, tz = self.image2pose[img_id]
-                pose_mat = utils.return_pose_mat_no_inv(
-                    [qw, qx, qy, qz], [tx, ty, tz]
-                )
+                quat = qw, qx, qy, qz, tx, ty, tz
+                pose_mat = utils.return_pose_mat_no_inv([qw, qx, qy, qz], [tx, ty, tz])
             else:
                 pose_mat = self.image2pose[img_id]
                 # pose_mat = np.linalg.inv(pose_mat)
@@ -546,12 +427,14 @@ class RobotCarDataset(Dataset):
                 pose_inv = None
             xyz_gt = None
             uv_gt = None
+            quat = None
 
         return (
             image,
             image_name,
             img_id,
             pid_list,
+            quat,
             pose_inv,
             intrinsics,
             camera,
@@ -727,4 +610,3 @@ class CMUDataset(Dataset):
         else:
             # Single element.
             return self._get_single_item(idx)
-
