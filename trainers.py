@@ -135,7 +135,7 @@ class BaseTrainer:
                 )
         return image_descriptor
 
-    def evaluate(self, result_file_name):
+    def evaluate(self, result_file_name, return_results=False):
         """
         write to pose file as name.jpg qw qx qy qz tx ty tz
         :return:
@@ -146,6 +146,7 @@ class BaseTrainer:
         gpu_index_flat = faiss.index_cpu_to_gpu(res, 0, index)
         gpu_index_flat.add(self.all_desc)
         result_file = open(result_file_name, "w")
+        all_results = []
 
         global_descriptors_path = f"output/{self.ds_name}/{self.global_desc_model_name}_{self.global_feature_dim}_desc_test.h5"
         if not os.path.isfile(global_descriptors_path):
@@ -179,10 +180,13 @@ class BaseTrainer:
                 tvec = " ".join(map(str, [tx, ty, tz]))
 
                 image_id = self.process_image_id(example)
-
-                print(f"{image_id} {qvec} {tvec}", file=result_file)
+                line = f"{image_id} {qvec} {tvec}"
+                if return_results:
+                    all_results.append(line)
+                print(line, file=result_file)
         result_file.close()
         global_features_h5.close()
+        return all_results
 
     def process_image_id(self, example):
         image_id = example[1].split("/")[-1]
@@ -193,117 +197,6 @@ class RobotCarTrainer(BaseTrainer):
     def process_image_id(self, example):
         image_id = "/".join(example[1].split("/")[1:])
         return image_id
-
-
-class CMUTrainer(BaseTrainer):
-    def clear(self):
-        del self.pid2mean_desc
-
-    def evaluate(self):
-        """
-        write to pose file as name.jpg qw qx qy qz tx ty tz
-        :return:
-        """
-
-        index = faiss.IndexFlatL2(self.feature_dim)  # build the index
-        res = faiss.StandardGpuResources()
-        gpu_index_flat = faiss.index_cpu_to_gpu(res, 0, index)
-        gpu_index_flat.add(self.pid2mean_desc[self.all_ind_in_train_set])
-
-        global_descriptors_path = (
-            f"output/{self.ds_name}/{self.global_desc_model_name}_desc_test.h5"
-        )
-        if not os.path.isfile(global_descriptors_path):
-            global_features_h5 = h5py.File(
-                str(global_descriptors_path), "a", libver="latest"
-            )
-            with torch.no_grad():
-                for example in tqdm(
-                    self.test_dataset, desc="Collecting global descriptors for test set"
-                ):
-                    if example is None:
-                        continue
-                    image_descriptor = self.produce_image_descriptor(example[1])
-                    name = example[1]
-                    dict_ = {"global_descriptor": image_descriptor}
-                    dd_utils.write_to_h5_file(global_features_h5, name, dict_)
-            global_features_h5.close()
-
-        features_h5 = h5py.File(self.test_features_path, "r")
-        global_features_h5 = h5py.File(global_descriptors_path, "r")
-        query_results = []
-        print(f"Reading global descriptors from {global_descriptors_path}")
-        print(f"Reading local descriptors from {self.test_features_path}")
-
-        if self.using_global_descriptors:
-            result_file_name = f"output/{self.ds_name}/CMU_eval_{self.local_desc_model_name}_{self.global_desc_model_name}.txt"
-        else:
-            result_file_name = (
-                f"output/{self.ds_name}/CMU_eval_{self.local_desc_model_name}.txt"
-            )
-
-        computed_images = {}
-        if os.path.isfile(result_file_name):
-            with open(result_file_name) as file:
-                lines = [line.rstrip() for line in file]
-            if len(lines) == len(self.test_dataset):
-                print(f"Found result file at {result_file_name}. Skipping")
-                return lines
-            else:
-                computed_images = {line.split(" ")[0]: line for line in lines}
-
-        result_file = open(result_file_name, "w")
-        with torch.no_grad():
-            for example in tqdm(self.test_dataset, desc="Computing pose for test set"):
-                if example is None:
-                    continue
-                name = example[1]
-                image_id = example[2].split("/")[-1]
-                if image_id in computed_images:
-                    line = computed_images[image_id]
-                else:
-                    keypoints, descriptors = dd_utils.read_kp_and_desc(
-                        name, features_h5
-                    )
-
-                    if self.using_global_descriptors:
-                        image_descriptor = dd_utils.read_global_desc(
-                            name, global_features_h5
-                        )
-
-                        descriptors = combine_descriptors(
-                            descriptors, image_descriptor, self.lambda_val
-                        )
-
-                    uv_arr, xyz_pred = self.legal_predict(
-                        keypoints,
-                        descriptors,
-                        gpu_index_flat,
-                    )
-
-                    camera = example[6]
-
-                    camera_dict = {
-                        "model": "OPENCV",
-                        "height": camera.height,
-                        "width": camera.width,
-                        "params": camera.params,
-                    }
-                    pose, info = poselib.estimate_absolute_pose(
-                        uv_arr,
-                        xyz_pred,
-                        camera_dict,
-                    )
-
-                    qvec = " ".join(map(str, pose.q))
-                    tvec = " ".join(map(str, pose.t))
-                    line = f"{image_id} {qvec} {tvec}"
-                query_results.append(line)
-                print(line, file=result_file)
-        features_h5.close()
-        global_features_h5.close()
-        result_file.close()
-        return query_results
 
 
 class CambridgeLandmarksTrainer(BaseTrainer):

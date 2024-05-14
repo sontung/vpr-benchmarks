@@ -244,7 +244,6 @@ class AachenDataset(Dataset):
             image_name = str(self.images_dir / name)
             qvec = self.recon_images[img_id].qvec
             tvec = self.recon_images[img_id].tvec
-            # pose_inv = benchmark_utils.return_pose_mat_no_inv(qvec, tvec)
             quat = np.concatenate([qvec, tvec])
 
         else:
@@ -374,63 +373,15 @@ class CMUDataset(Dataset):
         self.ds_type = f"cmu/{ds_dir.split('/')[-1]}"
         self.ds_dir = ds_dir
         self.sfm_model_dir = f"{ds_dir}/sparse"
-        self.intrinsics_dict = {
-            "c0": pycolmap.Camera(
-                model="OPENCV",
-                width=1024,
-                height=768,
-                params=[
-                    868.993378,
-                    866.063001,
-                    525.942323,
-                    420.042529,
-                    -0.399431,
-                    0.188924,
-                    0.000153,
-                    0.000571,
-                ],
-            ),
-            "c1": pycolmap.Camera(
-                model="OPENCV",
-                width=1024,
-                height=768,
-                params=[
-                    873.382641,
-                    876.489513,
-                    529.324138,
-                    397.272397,
-                    -0.397066,
-                    0.181925,
-                    0.000176,
-                    -0.000579,
-                ],
-            ),
-        }
         if train:
             self.images_dir_str = f"{self.ds_dir}/database"
             self.images_dir = Path(self.images_dir_str)
             self.recon_images = colmap_read.read_images_binary(
                 f"{self.sfm_model_dir}/images.bin"
             )
-            self.recon_cameras = colmap_read.read_cameras_binary(
-                f"{self.sfm_model_dir}/cameras.bin"
-            )
-            self.recon_points = colmap_read.read_points3D_binary(
-                f"{self.sfm_model_dir}/points3D.bin"
-            )
             self.image_name2id = {}
             for image_id, image in self.recon_images.items():
                 self.image_name2id[image.name] = image_id
-            self.image_id2points = {}
-            self.pid2images = {}
-
-            for img_id in self.recon_images:
-                pid_arr = self.recon_images[img_id].point3D_ids
-                pid_arr = pid_arr[pid_arr >= 0]
-                xyz_arr = np.zeros((pid_arr.shape[0], 3))
-                for idx, pid in enumerate(pid_arr):
-                    xyz_arr[idx] = self.recon_points[pid].xyz
-                self.image_id2points[img_id] = xyz_arr
             self.img_ids = list(self.image_name2id.values())
         else:
             self.images_dir_str = f"{self.ds_dir}/query"
@@ -442,82 +393,31 @@ class CMUDataset(Dataset):
 
         self.train = train
 
-    def clear(self):
-        if self.train:
-            self.recon_images.clear()
-            self.recon_cameras.clear()
-            self.recon_points.clear()
-
-    def _load_image(self, img_id):
+    def _process_name(self, img_id):
         if self.train:
             name = self.recon_images[img_id].name
             name2 = str(self.images_dir / name)
         else:
             name2 = img_id
-        try:
-            image = io.imread(name2)
-        except ValueError:
-            return None, name2
-
-        if len(image.shape) < 3:
-            # Convert to RGB if needed.
-            image = color.gray2rgb(image)
-
-        return image, name2
+        return name2
 
     def __len__(self):
         return len(self.img_ids)
 
     def _get_single_item(self, idx):
         img_id = self.img_ids[idx]
-        image, image_name = self._load_image(img_id)
-        if image is None:
-            print(f"Warning: cannot read image at {image_name}")
-            return None
+        image_name = self._process_name(img_id)
 
         if self.train:
-            camera_id = self.recon_images[img_id].camera_id
-            camera = self.recon_cameras[camera_id]
-            camera = pycolmap.Camera(
-                model=camera.model,
-                width=int(camera.width),
-                height=int(camera.height),
-                params=camera.params,
-            )
             qvec = self.recon_images[img_id].qvec
             tvec = self.recon_images[img_id].tvec
-            pose_inv = utils.return_pose_mat_no_inv(qvec, tvec)
-
-            xyz_gt = self.image_id2points[img_id]
-            pid_list = self.recon_images[img_id].point3D_ids
-            mask = pid_list >= 0
-            pid_list = pid_list[mask]
-            uv_gt = self.recon_images[img_id].xys[mask]
-
-            pose_inv = torch.from_numpy(pose_inv)
+            quat = np.concatenate([qvec, tvec])
 
         else:
-            cam_id = image_name.split("/")[-1].split("_")[2]
-            camera = self.intrinsics_dict[cam_id]
-
-            image = None
             img_id = image_name.split("/")[-1]
-            pid_list = []
-            pose_inv = None
-            xyz_gt = None
-            uv_gt = None
+            quat = None
 
-        return (
-            image,
-            image_name,
-            img_id,
-            pid_list,
-            pose_inv,
-            None,
-            camera,
-            xyz_gt,
-            uv_gt,
-        )
+        return image_name, img_id, quat
 
     def __getitem__(self, idx):
         if type(idx) == list:
