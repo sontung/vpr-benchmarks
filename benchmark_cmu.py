@@ -63,6 +63,6 @@ if __name__ == "__main__":
 
     run_function(
         args.dataset,
-        args.local_desc,
-        int(args.local_desc_dim),
+        args.global_desc,
+        int(args.global_desc_dim),
     )
