@@ -53,7 +53,7 @@ def run_function(
     )
     train_ds_ = RobotCarDataset(ds_dir=ds_dir, train=True)
     test_ds_ = RobotCarDataset(ds_dir=ds_dir, train=False, evaluate=True)
-    patchnetvlad_process(train_ds_, test_ds_)
+    # patchnetvlad_process(train_ds_, test_ds_)
 
     trainer_ = RobotCarTrainer(
         train_ds_,
