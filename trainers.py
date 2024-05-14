@@ -158,7 +158,7 @@ class BaseTrainer:
                     self.test_dataset, desc="Collecting global descriptors for test set"
                 ):
                     image_descriptor = self.produce_image_descriptor(example[0])
-                    name = example[0]
+                    name = example[1]
                     dict_ = {"global_descriptor": image_descriptor}
                     benchmark_utils.write_to_h5_file(global_features_h5, name, dict_)
             global_features_h5.close()
