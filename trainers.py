@@ -118,6 +118,7 @@ class BaseTrainer:
                 or "crica" in self.global_desc_model_name
                 or "salad" in self.global_desc_model_name
                 or "gcl" in self.global_desc_model_name
+                or "patchnetvlad" in self.global_desc_model_name
             ):
                 image_descriptor = self.global_desc_model.process(name)
             else:
@@ -177,88 +178,21 @@ class BaseTrainer:
                 qvec = " ".join(map(str, [qw, qx, qy, qz]))
                 tvec = " ".join(map(str, [tx, ty, tz]))
 
-                image_id = example[1].split("/")[-1]
+                image_id = self.process_image_id(example)
+
                 print(f"{image_id} {qvec} {tvec}", file=result_file)
         result_file.close()
         global_features_h5.close()
 
+    def process_image_id(self, example):
+        image_id = example[1].split("/")[-1]
+        return image_id
+
 
 class RobotCarTrainer(BaseTrainer):
-    def evaluate(self):
-        index = faiss.IndexFlatL2(self.feature_dim)  # build the index
-        res = faiss.StandardGpuResources()
-        gpu_index_flat = faiss.index_cpu_to_gpu(res, 0, index)
-        gpu_index_flat.add(self.pid2mean_desc)
-
-        global_descriptors_path = f"output/{self.ds_name}/{self.global_desc_model_name}_{self.global_feature_dim}_desc_test.h5"
-        if not os.path.isfile(global_descriptors_path):
-            global_features_h5 = h5py.File(
-                str(global_descriptors_path), "a", libver="latest"
-            )
-            with torch.no_grad():
-                for example in tqdm(
-                    self.test_dataset, desc="Collecting global descriptors for test set"
-                ):
-                    image_descriptor = self.produce_image_descriptor(example[1])
-                    name = example[1]
-                    dict_ = {"global_descriptor": image_descriptor}
-                    dd_utils.write_to_h5_file(global_features_h5, name, dict_)
-            global_features_h5.close()
-
-        features_h5 = h5py.File(self.test_features_path, "r")
-        global_features_h5 = h5py.File(global_descriptors_path, "r")
-
-        if self.using_global_descriptors:
-            result_file = open(
-                f"output/{self.ds_name}/RobotCar_eval_{self.local_desc_model_name}_{self.global_desc_model_name}_{self.global_feature_dim}.txt",
-                "w",
-            )
-        else:
-            result_file = open(
-                f"output/{self.ds_name}/RobotCar_eval_{self.local_desc_model_name}.txt",
-                "w",
-            )
-
-        with torch.no_grad():
-            for example in tqdm(self.test_dataset, desc="Computing pose for test set"):
-                name = example[1]
-                keypoints, descriptors = dd_utils.read_kp_and_desc(name, features_h5)
-                if self.using_global_descriptors:
-                    image_descriptor = dd_utils.read_global_desc(
-                        name, global_features_h5
-                    )
-
-                    descriptors = combine_descriptors(
-                        descriptors, image_descriptor, self.lambda_val
-                    )
-
-                uv_arr, xyz_pred = self.legal_predict(
-                    keypoints,
-                    descriptors,
-                    gpu_index_flat,
-                )
-
-                camera = example[6]
-                camera_dict = {
-                    "model": camera.model.name,
-                    "height": camera.height,
-                    "width": camera.width,
-                    "params": camera.params,
-                }
-                pose, info = poselib.estimate_absolute_pose(
-                    uv_arr,
-                    xyz_pred,
-                    camera_dict,
-                )
-
-                qvec = " ".join(map(str, pose.q))
-                tvec = " ".join(map(str, pose.t))
-
-                image_id = "/".join(example[2].split("/")[1:])
-                print(f"{image_id} {qvec} {tvec}", file=result_file)
-            result_file.close()
-        features_h5.close()
-        global_features_h5.close()
+    def process_image_id(self, example):
+        image_id = "/".join(example[1].split("/")[1:])
+        return image_id
 
 
 class CMUTrainer(BaseTrainer):

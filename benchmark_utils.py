@@ -10,7 +10,7 @@ from hloc import extractors
 from hloc.utils.base_model import dynamic_load
 
 
-def read_nvm_file(file_name):
+def read_nvm_file(file_name, read_xyz=False):
     with open(file_name) as file:
         lines = [line.rstrip() for line in file]
     nb_cameras = int(lines[2])
@@ -32,7 +32,40 @@ def read_nvm_file(file_name):
         unique_names.append(img_name)
         image2pose[i] = [qw, qx, qy, qz, tx, ty, tz]
 
+    if read_xyz:
+        nb_points = int(lines[4 + nb_cameras])
+        xyz_arr = np.zeros((nb_points, 3), np.float64)
+        # rgb_arr = np.zeros((nb_points, 3), np.float64)
+        # nb_points = 100
+        for j in tqdm(range(nb_points), desc="Reading points"):
+            point_info = lines[5 + nb_cameras + j].split(" ")
+            x, y, z, r, g, b, nb_features = point_info[:7]
+            x, y, z = map(float, [x, y, z])
+            xyz_arr[j] = [x, y, z]
+            # rgb_arr[j] = [r, g, b]
+        return xyz_arr
+
     return image2name, image2pose
+
+
+def read_bundle_file(info_file_name, list_txt_file_name):
+    with open(info_file_name) as file:
+        lines = [line.rstrip() for line in file]
+    with open(list_txt_file_name) as file:
+        image_names = [line.rstrip() for line in file]
+    nb_cameras, nb_points = map(int, lines[1].split(" "))
+    start_point = 2
+    image2pose = {}
+    for i in tqdm(range(nb_cameras), desc="Reading cameras"):
+        start = start_point+i*3
+        # f, k1, k2 = map(float, lines[start].split(" "))
+        r0 = list(map(float, lines[start+1].split(" ")))
+        r1 = list(map(float, lines[start+2].split(" ")))
+        r2 = list(map(float, lines[start+3].split(" ")))
+        qx, qy, qz, qw = Rotation.from_matrix(np.array([list(r0), list(r1), list(r2)]).T).as_quat()
+        tx, ty, tz = map(float, lines[start+4].split(" "))
+        image2pose[image_names[i]] = [qw, qx, qy, qz, tx, ty, tz]
+    return image2pose
 
 
 def project_using_pose(gt_pose_inv_B44, intrinsics_B33, xyz):
@@ -206,6 +239,11 @@ def prepare_encoders(retrieval_model, global_desc_dim):
 
         encoder_global = GCLModel()
         conf_ns_retrieval = None
+    elif retrieval_model == "patchnetvlad":
+        from patchnet_vlad_model import PatchNetVladModel
+
+        encoder_global = PatchNetVladModel()
+        conf_ns_retrieval = None
     else:
         model_dict = conf[retrieval_model]["model"]
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -277,3 +315,10 @@ def resize_image_by_hloc(image, size, interp):
     else:
         raise ValueError(f"Unknown interpolation {interp}.")
     return resized
+
+
+if __name__ == '__main__':
+    read_bundle_file(
+        "/home/n11373598/work/descriptor-disambiguation/datasets/robotcar/3D-models/all-merged/all.out",
+        "/home/n11373598/work/descriptor-disambiguation/datasets/robotcar/3D-models/all-merged/all.list.txt"
+    )
