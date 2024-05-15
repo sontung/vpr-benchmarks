@@ -78,7 +78,10 @@ class GCLModel:
         )
 
     def process(self, name):
-        image = Image.open(name).convert("RGB")
+        try:
+            image = Image.open(name).convert("RGB")
+        except OSError:
+            return None
         image = self.transform(image)
         image = torchvision.transforms.functional.resize(image, (480, 640))
         with torch.no_grad():

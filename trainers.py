@@ -133,6 +133,8 @@ class BaseTrainer:
                     .cpu()
                     .numpy()
                 )
+        if image_descriptor is None:
+            image_descriptor = np.zeros(self.global_feature_dim)
         return image_descriptor
 
     def evaluate(self, result_file_name, return_results=False):

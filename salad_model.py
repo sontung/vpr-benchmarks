@@ -60,7 +60,10 @@ class SaladModel:
         self.conf = {"name": "salad"}
 
     def process(self, name):
-        image = Image.open(name).convert("RGB")
+        try:
+            image = Image.open(name).convert("RGB")
+        except OSError:
+            return None
         image = self.transform(image)
         image_descriptor = self.model(image.unsqueeze(0).cuda())
         image_descriptor = image_descriptor.squeeze().cpu().numpy()  # 8448

@@ -1,10 +1,30 @@
 import sys
+import torchvision.transforms as tvf
+from PIL import Image
 
 import torch
 
 sys.path.append("../MixVPR")
 from mix_vpr_main import VPRModel
-from mix_vpr_demo import load_image as load_image_mix_vpr
+
+
+def load_image(path):
+    try:
+        image_pil = Image.open(path).convert("RGB")
+    except OSError:
+        return None
+
+    # add transforms
+    transforms = tvf.Compose([
+        tvf.Resize((320, 320), interpolation=tvf.InterpolationMode.BICUBIC),
+        tvf.ToTensor(),
+        tvf.Normalize([0.485, 0.456, 0.406],
+                      [0.229, 0.224, 0.225])
+    ])
+
+    # apply transforms
+    image_tensor = transforms(image_pil)
+    return image_tensor
 
 
 class MVModel:
@@ -71,7 +91,9 @@ class MVModel:
         self.encoder_global.eval()
 
     def process(self, name):
-        image = load_image_mix_vpr(name)
+        image = load_image(name)
+        if image is None:
+            return None
         image_descriptor = self.encoder_global(image.unsqueeze(0).cuda())
         image_descriptor = image_descriptor.squeeze().cpu().numpy()
         return image_descriptor

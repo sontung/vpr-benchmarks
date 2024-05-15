@@ -38,7 +38,10 @@ class CricaModel:
         )
 
     def process(self, name):
-        image = Image.open(name).convert("RGB")
+        try:
+            image = Image.open(name).convert("RGB")
+        except OSError:
+            return None
         image = self.transform(image)
         image = torchvision.transforms.functional.resize(image, (224, 224))
         image_descriptor = self.model(image.unsqueeze(0).cuda())
