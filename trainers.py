@@ -169,19 +169,23 @@ class BaseTrainer:
         with torch.no_grad():
             for example in tqdm(self.test_dataset, desc="Computing pose for test set"):
                 name = example[1]
-                image_descriptor = benchmark_utils.read_global_desc(
-                    name, global_features_h5
-                )
-                _, pose_idx = gpu_index_flat.search(
-                    image_descriptor.reshape((1, -1)), 1
-                )
-                pose_idx = int(pose_idx)
+                image_id = self.process_image_id(example)
+                try:
+                    image_descriptor = benchmark_utils.read_global_desc(
+                        name, global_features_h5
+                    )
+                    _, pose_idx = gpu_index_flat.search(
+                        image_descriptor.reshape((1, -1)), 1
+                    )
+                    pose_idx = int(pose_idx)
 
-                qw, qx, qy, qz, tx, ty, tz = self.all_poses[pose_idx]
+                    qw, qx, qy, qz, tx, ty, tz = self.all_poses[pose_idx]
+                except KeyError:
+                    qw, qx, qy, qz, tx, ty, tz = [0]*7
+
                 qvec = " ".join(map(str, [qw, qx, qy, qz]))
                 tvec = " ".join(map(str, [tx, ty, tz]))
 
-                image_id = self.process_image_id(example)
                 line = f"{image_id} {qvec} {tvec}"
                 if return_results:
                     all_results.append(line)
