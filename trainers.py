@@ -119,6 +119,7 @@ class BaseTrainer:
                 or "salad" in self.global_desc_model_name
                 or "gcl" in self.global_desc_model_name
                 or "patchnetvlad" in self.global_desc_model_name
+                or "boq" in self.global_desc_model_name
             ):
                 image_descriptor = self.global_desc_model.process(name)
             else:

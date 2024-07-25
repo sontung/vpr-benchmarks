@@ -53,7 +53,6 @@ def run_function(
     )
     train_ds_ = RobotCarDataset(ds_dir=ds_dir, train=True)
     test_ds_ = RobotCarDataset(ds_dir=ds_dir, train=False, evaluate=True)
-    # patchnetvlad_process(train_ds_, test_ds_)
 
     trainer_ = RobotCarTrainer(
         train_ds_,
@@ -77,12 +76,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--global_desc",
         type=str,
-        default="mixvpr",
+        default="boq",
     )
     parser.add_argument(
         "--global_desc_dim",
         type=int,
-        default=128,
+        default=12288,
     )
     args = parser.parse_args()
 

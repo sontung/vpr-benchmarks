@@ -244,6 +244,11 @@ def prepare_encoders(retrieval_model, global_desc_dim):
 
         encoder_global = PatchNetVladModel()
         conf_ns_retrieval = None
+    elif retrieval_model == "boq":
+        from boq_model import BOQModel
+
+        encoder_global = BOQModel()
+        conf_ns_retrieval = None
     else:
         model_dict = conf[retrieval_model]["model"]
         device = "cuda" if torch.cuda.is_available() else "cpu"

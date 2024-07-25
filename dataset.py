@@ -332,7 +332,7 @@ class RobotCarDataset(Dataset):
             name0 = self.img_ids[idx]
             try:
                 pose_mat = self.name2mat[name0]
-                # pose_mat = np.linalg.inv(pose_mat)
+                pose_mat = np.linalg.inv(pose_mat)
                 qx, qy, qz, qw = Rotation.from_matrix(pose_mat[:3, :3]).as_quat()
                 tx, ty, tz = pose_mat[:3, 3]
                 quat = qw, qx, qy, qz, tx, ty, tz
